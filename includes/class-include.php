@@ -26,7 +26,7 @@ class PH_Postqueue {
 	public function __construct() {
 
 		$this->plugin_name = 'ph-postqueue';
-		$this->version = '1.0';
+		$this->version = '1.0.1';
 
 		$this->load_dependencies();
 		$this->set_locale();

@@ -7,7 +7,7 @@
  * @wordpress-plugin
  * Plugin Name:       PALASTHOTEL Postqueue
  * Description:       Create manually ordered post queues
- * Version:           1.0
+ * Version:           1.0.1
  * Author:            PALASHOTEL by Edward Bock
  * Author URI:        http://palasthotel.de
  * License:           GPL-2.0+
