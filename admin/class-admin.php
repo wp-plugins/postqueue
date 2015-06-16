@@ -1,230 +1,186 @@
 <?php
+
+
 /**
- *	Postqueue Store class
+ * The dashboard-specific functionality of the plugin.
  */
-class PH_Postqueue_Store
-{
+class PH_Postqueue_Admin {
 
 	/**
-	 * postqueues
+	 * The ID of this plugin.
+	 * 
 	 */
-	private $queues;
+	private $plugin_name;
 
 	/**
-	 * Define the core functionality of the plugin.
+	 * The version of this plugin.
+	 * 
 	 */
-	public function __construct() {
-		$this->queues = null;
+	private $version;
+
+	/**
+	 * Initialize the class and set its properties.
+	 * 
+	 */
+	public function __construct( $plugin_name, $version )
+	{
+
+		$this->plugin_name = $plugin_name;
+		$this->version = $version;
+
 	}
 
 	/**
 	 * creates a new queue
 	 */
-	public function create($name)
+	public function create_queue()
 	{
-		global $wpdb;
-		$result = (object) array();
-		$result->name = $name;
-		$result->slug = sanitize_title($result->name);
-		$result->success = $wpdb->insert(
-			$wpdb->prefix.'ph_postqueues',
-			array(
-				'name' => $result->name,
-				'slug' => $result->slug,
-			),
-			array(
-				'%s',
-				'%s',
-			)
-		);
-		$result->id = $wpdb->insert_id;
-		return $result;
+		$name = sanitize_text_field($_GET["queue_name"]);
 
+		$store = new PH_Postqueue_Store();
+		$result = $store->create($name);
+
+		/**
+		 * action queue is created
+		 */
+		do_action("ph_postqueue_created", (object)array( "id" => $result->id, "slug" => $result->slug) );
+
+		$this->return_ajax($result);
 	}
 
 	/**
-	 * Adds a single relation
-	 * @return  queues array
+	 * loads a single queues posts
 	 */
-	public function get_queues()
+	public function load_queue()
 	{
-		if($this->queues == null)
-		{
-			$this->queues = $this->search();
-		}
-		return $this->queues;
+		$queue_id = intval($_GET["queue_id"]);
+
+		$store = new PH_Postqueue_Store();
+		$result = $store->get_queue_by_id($queue_id);
+
+		$this->return_ajax($result);
+	}
+	/**
+	 * delete ajax function for queues
+	 */
+	public function delete_queue()
+	{
+		$result = (object)array();
+		$queue_id = intval($_GET["queue_id"]);
+
+		/**
+		 * action before queue is deleted
+		 */
+		do_action("ph_postqueue_deleting", $queue_id);
+
+		$store = new PH_Postqueue_Store();
+		$store->delete_queue($queue_id);
+
+	}
+
+	public function save_post_items()
+	{
+		$result = (object)array();
+		$result->queue_id = intval($_GET["queue_id"]);
+		$result->items = $_GET["items"];
+
+		$store = new PH_Postqueue_Store();
+		$store->queue_clear($result->queue_id);
+
+		$store->queue_add_all($result->queue_id, $result->items);
+
+		$this->return_ajax($result);
 	}
 
 	/**
-	 * returns queue by id
+	 * delete ajax function
 	 */
-	public function get_queue_by_id($qid)
+	public function delete_post()
 	{
-		global $wpdb;
-		$query = "";
-		$query.= "SELECT name, slug, contents.id as cid, queue_id, post_id, position, title_overwrite as title FROM";
-		$query.=" ".$wpdb->prefix."ph_postqueues queue LEFT JOIN ".$wpdb->prefix."ph_postqueue_contents contents";
-		$query.= " ON (queue.id = contents.queue_id)";
-		$query.=" WHERE queue_id = ".$qid;
-		$query.=" ORDER BY position ASC";
-		$results = $wpdb->get_results($query);
-		for($i = 0; $i < count($results); $i++) {
-			if ( FALSE === get_post_status( $results[$i]->post_id ) ) {
-				$results = array_slice($results, $i, 1);
-				$i--;
-				continue;
-			} 
-			$pid = $results[$i]->post_id;
-			if($results[$i]->title != ""){
-				$results[$i]->post_title = $results[$i]->title;
-			} else{
-				$results[$i]->post_title = get_the_title($pid);
-			}
-		}
-		return $results;
+		$result = (object)array();
+		$queue_id = intval($_GET["queue_id"]);
+		$post_id = intval($_GET["post_id"]);
+		$store = new PH_Postqueue_Store();
+		$store->delete_queue_post($queue_id, $post_id);
 	}
 
-	/**
-	 * returns queue by slug
-	 */
-	public function get_queue_by_slug($slug)
+	public function search_posts()
 	{
-		global $wpdb;
-		$query = "";
-		$query.= "SELECT name, slug, contents.id as cid, queue_id, post_id, position, title_overwrite as title FROM";
-		$query.=" ".$wpdb->prefix."ph_postqueues queue LEFT JOIN ".$wpdb->prefix."ph_postqueue_contents contents";
-		$query.= " ON (queue.id = contents.queue_id)";
-		$query.=" WHERE slug = '".$slug."'";
-		$query.=" ORDER BY position ASC";
+		$result = (object)array();
+		$result->search = sanitize_text_field($_GET["search"]);
 		
-		$results = $wpdb->get_results($query);
-		$return = array();
-		for($i = 0; $i < count($results); $i++) {
-			if($results[$i]->post_id == null) continue;
-			$pid = $results[$i]->post_id;
-			if($results[$i]->title != ""){
-				$results[$i]->post_title = $results[$i]->title;
-			} else{
-				$results[$i]->post_title = get_the_title($pid);
-			}	
-			$return[] = $results[$i];	
+		global $wpdb;
+		$results = $wpdb->get_results(
+			"SELECT ID, post_title FROM ".$wpdb->prefix."posts".
+			" WHERE".
+			" post_title LIKE '%".$result->search."%'".
+			" AND (post_status = 'publish'".
+			" OR ID = '".$result->search."' )".
+			" ORDER BY ID DESC LIMIT 10"
+		);
+
+		$result->posts = array();
+		foreach ($results as $index => $post) {
+			$p = (object)array();
+			$p->post_id = $post->ID;
+			$p->post_title = $post->post_title;
+			$result->posts[] = $p;
 		}
 
-		return $return;
-	}
-
-	public function queue_clear($queue_id)
-	{
-		global $wpdb;
-		$wpdb->delete(
-			$wpdb->prefix."ph_postqueue_contents",
-			array( "queue_id" => $queue_id ),
-			array( "%d" )
-		);
-	}
-
-	public function queue_add_all($qid, $post_ids)
-	{
-		foreach ($post_ids as $position => $post_id) {
-			$this->queue_add($qid, $post_id, $position);
-		}
-	}
-
-	public function queue_add_all_with_title($qid, $post_ids, $titles)
-	{	
-
-		for ($i=0; $i < count($post_ids) ; $i++) { 
-			$this->queue_add($qid, $post_ids[$i], $i, $titles[$i]);
-		}
-	}
-
-	public function queue_add($queue_id, $post_id, $position, $title = "")
-	{
-		global $wpdb;
-		$wpdb->insert(
-			$wpdb->prefix."ph_postqueue_contents",
-			array(
-				'queue_id' => $queue_id,
-				'post_id' => $post_id,
-				'position' => $position,
-				'title_overwrite' => $title,
-			),
-			array(
-				"%d",
-				"%d",
-				"%d",
-				'%s',
-			)
-		);
-	}
-
-	public function delete_queue($queue_id)
-	{
-		global $wpdb;
-		$wpdb->delete(
-			$wpdb->prefix."ph_postqueue_contents",
-			array(
-				"queue_id" => $queue_id,
-			),
-			array(
-				"%d",
-			)
-		);
-		$wpdb->delete(
-			$wpdb->prefix."ph_postqueues",
-			array(
-				"id" => $queue_id,
-			),
-			array(
-				"%d",
-			)
-		);
-	}
-
-	public function delete_queue_post($queue_id, $post_id)
-	{
-		global $wpdb;
-		$wpdb->delete(
-			$wpdb->prefix."ph_postqueue_contents",
-			array(
-				"post_id" => $post_id,
-				"queue_id" => $queue_id,
-			),
-			array(
-				"%d",
-				"%d",
-			)
-		);
+		$this->return_ajax($result);
 	}
 
 	/**
-	 * delets all queue contents of the deleted post id
+	 * triggered when a post is deleted
 	 */
-	public function clear_for_post_id($post_id)
+	public function on_post_delete($post_id)
 	{
-		global $wpdb;
-		$wpdb->delete(
-			$wpdb->prefix."ph_postqueue_contents",
-			array(
-				"post_id" => $post_id,
-			),
-			array(
-				"%d",
-			)
-		);
+		$store = new PH_Postqueue_Store();
+		$store->clear_for_post_id($post_id);
 	}
 
 	/**
-	 * serach queue
+	 * returns json for ajax calls
 	 */
-	public function search($name = ""){
-		global $wpdb;
-		$query = "";
-		$query.= "SELECT * FROM ".$wpdb->prefix."ph_postqueues";
-		$query.=" WHERE name LIKE '%".$name."%'";
-		$query.=" ORDER BY id ASC";
-		$result = $wpdb->get_results($query);
-		return $result;
+	private function return_ajax($result)
+	{
+		print json_encode( array( 'result' => $result ) );
+		die();
 	}
+
+	/**
+	 * Register the menu page for gallery sharing
+	 *
+	 */
+	public function tools_page()
+	{
+		add_submenu_page( 'tools.php', 'Postqueues', 'Postqueues', 'manage_options', 'tools-'.$this->plugin_name, array( $this, 'render_tools' ) );
+	}
+
+	/**
+	 *  renders tools page
+	 */
+	public function render_tools()
+	{
+		$store = new PH_Postqueue_Store();
+		/**
+		 * Add css and javascript
+		 */
+		wp_enqueue_style(
+			$this->plugin_name, 
+			plugin_dir_url( __FILE__ ) . 'css/ph-postqueue-editor.css',
+			array( ),
+			$this->version,
+			'all'
+		);
+		wp_enqueue_script(
+			$this->plugin_name, 
+			plugin_dir_url( __FILE__ ) . 'js/ph-postqueue-editor.js',
+			array( 'jquery', 'jquery-ui-autocomplete', 'jquery-ui-sortable' ),
+			$this->version,
+			false
+		);
+		require plugin_dir_path( __FILE__ ) .'partials/ph-postqueue-editor.tpl.php';		
+	}
+
 }
-?>
